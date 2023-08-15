@@ -24,9 +24,7 @@ def ensure_shared_grads(model, shared_model, gpu=False):
             return
         elif not gpu:
             shared_param._grad = param.grad
-        else:
-            if param.grad is None:
-                continue
+        elif param.grad is not None:
             shared_param._grad = param.grad.cpu()
 
 def preprocessor(data, device):
@@ -70,7 +68,7 @@ def set_cuda_visible_device(ngpus):
     import os
     empty = []
     for i in range(8):
-        command = 'nvidia-smi -i '+str(i)+' | grep "No running" | wc -l'
+        command = f'nvidia-smi -i {str(i)} | grep "No running" | wc -l'
         output = subprocess.check_output(command, shell=True).decode("utf-8")
         #print('nvidia-smi -i '+str(i)+' | grep "No running" | wc -l > empty_gpu_check')
         if int(output)==1:
@@ -78,10 +76,7 @@ def set_cuda_visible_device(ngpus):
     if len(empty)<ngpus:
         print ('avaliable gpus are less than required')
         exit(-1)
-    cmd = ''
-    for i in range(ngpus):        
-        cmd+=str(empty[i])+','
-    return cmd
+    return ''.join(f'{str(empty[i])},' for i in range(ngpus))
 
 def cal_auc(true, pred):    
     from sklearn.metrics import roc_auc_score
@@ -99,12 +94,11 @@ def cal_R2(true, pred):
     
 def initialize_model(model, device, load_save_file=False):
     if load_save_file:
-        model.load_state_dict(torch.load(load_save_file)) 
+        model.load_state_dict(torch.load(load_save_file))
     else:
         for param in model.parameters():
             if param.dim() == 1:
                 continue
-                nn.init.constant(param, 0)
             else:
                 #nn.init.normal(param, 0.0, 0.15)
                 nn.init.xavier_normal_(param)

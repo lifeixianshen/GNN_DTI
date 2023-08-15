@@ -26,10 +26,9 @@ class GAT_gate(torch.nn.Module):
         #h_prime = torch.matmul(attention, h)
         attention = attention*adj
         h_prime = F.relu(torch.einsum('aij,ajk->aik',(attention, h)))
-       
+
         coeff = torch.sigmoid(self.gate(torch.cat([x,h_prime], -1))).repeat(1,1,x.size(-1))
-        retval = coeff*x+(1-coeff)*h_prime
-        return retval
+        return coeff*x+(1-coeff)*h_prime
 
 class GConv(torch.nn.Module):
     def __init__(self, n_in_feature, n_out_feature):
@@ -52,10 +51,7 @@ class GConv_gate(torch.nn.Module):
         m = self.W(x)
         m = F.relu(torch.einsum('xjk,xkl->xjl', (adj.clone(), m)))
         coeff = torch.sigmoid(self.gate(torch.cat([x,m], -1))).repeat(1,1,x.size(-1))
-        retval = coeff*x+(1-coeff)*m
-
-        #x = torch.bmm(adj, x)
-        return retval
+        return coeff*x+(1-coeff)*m
 
 class GGNN(torch.nn.Module):
     def __init__(self, n_in_feature, n_out_feature):
@@ -95,19 +91,18 @@ class ConcreteDropout(nn.Module):
             out = layer(self._concrete_dropout(x1, p))
         else:
             out = layer(self._concrete_dropout(x1, p), x3)-layer(self._concrete_dropout(x1, p), x2)
-        
-        sum_of_square = 0
-        for param in layer.parameters():
-            sum_of_square += torch.sum(torch.pow(param, 2))
-        
+
+        sum_of_square = sum(
+            torch.sum(torch.pow(param, 2)) for param in layer.parameters()
+        )
         weights_regularizer = self.weight_regularizer * sum_of_square / (1 - p)
-        
+
         dropout_regularizer = p * torch.log(p)
         dropout_regularizer += (1. - p) * torch.log(1. - p)
-        
+
         input_dimensionality = x1[0].numel() # Number of elements of first item in batch
         dropout_regularizer *= self.dropout_regularizer * input_dimensionality
-        
+
         regularization = weights_regularizer + dropout_regularizer
         return out, regularization
         

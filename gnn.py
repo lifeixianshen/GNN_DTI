@@ -18,7 +18,7 @@ class gnn(torch.nn.Module):
         self.dropout_rate = args.dropout_rate 
 
 
-        self.layers1 = [d_graph_layer for i in range(n_graph_layer+1)]
+        self.layers1 = [d_graph_layer for _ in range(n_graph_layer+1)]
         if args.GNN == 'GGNN':
             self.gconv1 = nn.ModuleList([GGNN(self.layers1[i], self.layers1[i+1]) for i in range(len(self.layers1)-1)]) 
         elif args.GNN == 'GConv':
@@ -27,15 +27,15 @@ class gnn(torch.nn.Module):
             self.gconv1 = nn.ModuleList([GConv_gate(self.layers1[i], self.layers1[i+1]) for i in range(len(self.layers1)-1)]) 
         elif args.GNN == 'GAT_gate':
             self.gconv1 = nn.ModuleList([GAT_gate(self.layers1[i], self.layers1[i+1]) for i in range(len(self.layers1)-1)]) 
-        
+
         self.FC = nn.ModuleList([nn.Linear(self.layers1[-1], d_FC_layer) if i==0 else
                                  nn.Linear(d_FC_layer, 1) if i==n_FC_layer-1 else
                                  nn.Linear(d_FC_layer, d_FC_layer) for i in range(n_FC_layer)])
-        
+
         self.mu = nn.Parameter(torch.Tensor([args.initial_mu]).float())
         self.dev = nn.Parameter(torch.Tensor([args.initial_dev]).float())
         self.embede = nn.Linear(2*N_atom_features, d_graph_layer, bias = False)
-        
+
         #Variables for concrete dropout
 
         self.CDO = False
@@ -45,12 +45,24 @@ class gnn(torch.nn.Module):
             self.N = args.CDO_N
             weight_regularizer = self.l**2. / self.N
             dropout_regularizer = 2.0 / self.N
-            self.CDO1 = nn.ModuleList([ConcreteDropout(weight_regularizer=weight_regularizer,\
-                                                     dropout_regularizer=dropout_regularizer) \
-                                                     for i in range(len(self.layers1)-1)])
-            self.CDO2 = nn.ModuleList([ConcreteDropout(weight_regularizer=weight_regularizer,\
-                                                     dropout_regularizer=dropout_regularizer) \
-                                                     for i in range(len(self.FC)-1)])
+            self.CDO1 = nn.ModuleList(
+                [
+                    ConcreteDropout(
+                        weight_regularizer=weight_regularizer,
+                        dropout_regularizer=dropout_regularizer,
+                    )
+                    for _ in range(len(self.layers1) - 1)
+                ]
+            )
+            self.CDO2 = nn.ModuleList(
+                [
+                    ConcreteDropout(
+                        weight_regularizer=weight_regularizer,
+                        dropout_regularizer=dropout_regularizer,
+                    )
+                    for _ in range(len(self.FC) - 1)
+                ]
+            )
 
 
     def embede_graph(self, data):
@@ -70,10 +82,7 @@ class gnn(torch.nn.Module):
                 c_hs = F.dropout(c_hs, p=self.dropout_rate, training=self.training)
         c_hs = c_hs*c_valid.unsqueeze(-1).repeat(1, 1, c_hs.size(-1))
         c_hs = c_hs.sum(1)
-        if self.CDO:
-            return c_hs, regularization.sum()
-        else:            
-            return c_hs, 0.0
+        return (c_hs, regularization.sum()) if self.CDO else (c_hs, 0.0)
 
     def fully_connected(self, c_hs):
         regularization = torch.empty(len(self.FC)*1-1, device=c_hs.device)
@@ -93,10 +102,7 @@ class gnn(torch.nn.Module):
         c_hs = torch.sigmoid(c_hs)
 
         #return retval, 0.0
-        if self.CDO:
-            return c_hs, regularization.sum()
-        else:
-            return c_hs, 0.0
+        return (c_hs, regularization.sum()) if self.CDO else (c_hs, 0.0)
 
     def train_model(self, data1, data2, mixing_ratio):
         #embede a graph to a vector
